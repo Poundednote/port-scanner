@@ -11,19 +11,19 @@
 typedef struct IpHeader {
     unsigned char hl:4, ver:4;
     unsigned char tos;
-    unsigned short total_len;
-    unsigned short id;
-    unsigned short fragment_offset:13, flags:3;
+    ushort total_len;
+    ushort id;
+    ushort fragment_offset:13, flags:3;
     unsigned char ttl;
     unsigned char protocol;
-    unsigned short checksum;
+    ushort checksum;
     u_int32_t source_addr;
     u_int32_t dest_addr;
 } IpHeader;
 
 typedef struct TcpHeader {
-    unsigned short sport;
-    unsigned short destport;
+    ushort sport;
+    ushort destport;
     u_int32_t seqnum;
     u_int32_t acknum;
     unsigned char reserved:4, dataoffset:4;
@@ -35,9 +35,9 @@ typedef struct TcpHeader {
     unsigned char urg:1;
     unsigned char ece:1;
     unsigned char cwr:1;
-    unsigned short window;
-    unsigned short checksum;
-    unsigned short urg_pointer;
+    ushort window;
+    ushort checksum;
+    ushort urg_pointer;
 
 } TcpHeader; 
 
@@ -46,11 +46,11 @@ typedef struct PseudoHeader {
     u_int32_t dest_ip;
     unsigned char zero;
     unsigned char protocol;
-    unsigned short total_len;
+    ushort total_len;
     TcpHeader tcp;
 } PseudoHeader;
 
-ushort in_cksum(unsigned short *addr, int len) {
+ushort in_cksum(ushort *addr, int len) {
     int sum = 0;
     u_short answer = 0;
     u_short *w = addr;
@@ -72,7 +72,7 @@ ushort in_cksum(unsigned short *addr, int len) {
     return(answer);
 }
 
-int packet_create_and_send(int socket, struct sockaddr_in* source, struct sockaddr_in* dest_addr, unsigned short dest_port) {
+int packet_create_and_send(int socket, struct sockaddr_in* source, struct sockaddr_in* dest_addr, ushort dest_port) {
     char datagram[1000];
     memset(datagram, 0, 1000);
     dest_addr->sin_port = dest_port; /* set destination address port to scanning port */
@@ -98,7 +98,7 @@ int packet_create_and_send(int socket, struct sockaddr_in* source, struct sockad
     ps_hdr.protocol = IPPROTO_TCP;
     ps_hdr.total_len = htons(sizeof(TcpHeader));
     ps_hdr.tcp = *tcp_hdr;
-    tcp_hdr->checksum = in_cksum((unsigned short *)&ps_hdr, sizeof(struct PseudoHeader));
+    tcp_hdr->checksum = in_cksum((ushort *)&ps_hdr, sizeof(struct PseudoHeader));
 
     int bytessent;
     if ((bytessent = sendto(socket, datagram, sizeof(TcpHeader), 0, (struct sockaddr *)dest_addr, sizeof(*dest_addr))) < 0) {
@@ -112,7 +112,7 @@ int packet_create_and_send(int socket, struct sockaddr_in* source, struct sockad
 /* TODO: Make the processing more thorough to identify whether or not port is filtered or closed */
 /* TODO: Possibly run in a seperate thread */
 int packet_recv_and_process(int socket, unsigned char *buffer, int buffer_size, struct sockaddr_in *source_addr, 
-        unsigned short port_current, unsigned short ports_open[65535], unsigned short *ports_open_index) {
+        ushort port_current, ushort ports_open[65535], ushort *ports_open_index) {
 
     memset(buffer, 0, buffer_size);
     struct sockaddr_in dest_addr;
@@ -152,7 +152,7 @@ int packet_recv_and_process(int socket, unsigned char *buffer, int buffer_size, 
 
 int main(int argc, char *argv[]) {
     /* TODO check if padding in struct matters when sending datagram */
-    char packet_data[30]; /* packet should only be 20 bytes extra 10 bytes to account for padding */
+    char packet_data[30]; /* packet should only be 20 bytes extra 10 bytes just in case */
     unsigned char incomingdatagram[65535];
     int error; /* for errno */
 
@@ -163,17 +163,16 @@ int main(int argc, char *argv[]) {
      */
 
 
-    unsigned short ports_open[65535];
-    unsigned short ports_open_index = 0;
+    ushort ports_open[65535];
+    ushort ports_open_index = 0;
     memset(packet_data, 0, 20);
-    memset(ports_open, 0, 65535);
+    memset(ports_open, 0, sizeof(ports_open));
 
     struct addrinfo hints = {}, *result;
 
     /* TODO make ports parametrisable in arguments, need to write a parser */
-    unsigned short client_port = 50000;
-    unsigned short port_current = 1; /* set current port to scan to start port */
-    unsigned short end_port = 150;
+    ushort port_current = 1; /* set current port to scan to start port */
+    ushort end_port = 150;
 
     /* fill out hints to find ipv4 address from name */
     hints.ai_family = AF_INET;
@@ -202,8 +201,14 @@ int main(int argc, char *argv[]) {
     dns_server_addr.sin_port = htons(53);
     
     int socket_find_local_ip = socket(AF_INET, SOCK_DGRAM, 0);
-    int err = connect(socket_find_local_ip, (struct sockaddr *)server_addr, sizeof(*server_addr));
-    err = getsockname(socket_find_local_ip, (struct sockaddr *)&client_addr, &client_addr_size); 
+    if ((error = connect(socket_find_local_ip, (struct sockaddr *)server_addr, sizeof(*server_addr))) < 0) {
+        printf("error connecting socket to establish host adress %d\n", errno);
+    }
+    
+    if ((error = getsockname(socket_find_local_ip, (struct sockaddr *)&client_addr, &client_addr_size)) < 0) {
+        printf("error getting host address from socket %d\n", errno);
+    }
+
     close(socket_find_local_ip);
 
     /* change server_addr to point to the results of getaddrinfo instead of google dns server */
@@ -216,7 +221,7 @@ int main(int argc, char *argv[]) {
             printf("port %d closed\n", port_current);
             packet_create_and_send(socket_scan, &client_addr, server_addr, port_current);
             usleep(15000); /* waiting for response and gives kernel time to clear send buffer */
-            if (packet_recv_and_process(socket_scan, incomingdatagram, 65535, &client_addr, port_current, ports_open, &ports_open_index)) {
+            if (packet_recv_and_process(socket_scan, incomingdatagram, sizeof(incomingdatagram), &client_addr, port_current, ports_open, &ports_open_index)) {
                 break;
             }
         }
