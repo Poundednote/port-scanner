@@ -1,4 +1,4 @@
-#include <stdio.h>
+include <stdio.h>
 #include <string.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -74,7 +74,7 @@ ushort in_cksum(ushort *addr, int len) {
 
 int packet_create_and_send(int socket, struct sockaddr_in* source, struct sockaddr_in* dest_addr, ushort dest_port) {
     char datagram[1000];
-    memset(datagram, 0, 1000);
+    memset(datagram, 0, sizeof(datagram));
     dest_addr->sin_port = dest_port; /* set destination address port to scanning port */
 
     /* place TcpHeader in datagram */
@@ -165,7 +165,7 @@ int main(int argc, char *argv[]) {
 
     ushort ports_open[65535];
     ushort ports_open_index = 0;
-    memset(packet_data, 0, 20);
+    memset(packet_data, 0, sizeof(packet_data));
     memset(ports_open, 0, sizeof(ports_open));
 
     struct addrinfo hints = {}, *result;
